@@ -28,40 +28,46 @@ logging.basicConfig(level = logging.INFO)
 ## ! change get_all_contacts_from_a_contact_list time sleep to 60 sec
 class RealTimeCampaign:
             
-    class VendeurParticulier:   
+    class VendeurParticulierEN:  
+        """ Class permettant d'instancier les conditions principales de la campagnes
+        """
         max_attempts = 5
         range_days = 35
         ratio = 1
    
    
-class TagVendeurParticulier:
+class TagVendeurParticulierEN:
     
-    def __init__(self, file_logger):
+    def __init__(self, file_logger) -> None:
         
         self.sac_client = SugarApiClient()
         self.dorm_client = DormApiClient()
         self.file_logger = file_logger
 
-    def __init_api_client(self):
+    def __init_api_client(self) -> None:
+        """Method initiant la connexion à l'API de Genesys
+        """
         self.outbound = Outbound(os.getenv('CLIENT_ID'), os.getenv('CLIENT_SECRET'))
       
       
-    def get_contacts_tag(self):
+    def get_contacts_tag(self) -> list[dict]:
+        """Method qui fetch les Contacts comportant les conditions de la source Vendeur Particulier Anglais
+
+        Returns:
+            _type_: Retourne une de dictionnaire de Contacts
+        """
         
         return self.sac_client.get('Contacts', 
                             filters={"filter": [
                                 {"statut_client_c": "Prospect"},
-                                {"preferred_language_c": LangueCommunication.FRANCAIS},
+                                {"preferred_language_c": LangueCommunication.ANGLAIS},
                                 {"source_secondaire_c":
                                     {"$not_in": [
                                         "Collecte Web", 
                                         "SNV", 
                                         "Soumission Web", 
-                                        "Vendeur Particulier",
-                                        "ClicAssure",
                                         "Vendeur Particulier Anglais",
-                                        "Agent Particulier Anglais",
-                                        "Autres Statuts Anglais",
+                                        "ClicAssure",
                                         "Numero Hors Service"
                                     ]} 
                                 },
@@ -74,12 +80,17 @@ class TagVendeurParticulier:
                             fields=['id'], max_num=5000)
     
    
-    def get_contacts_clicassure_tag(self):
+    def get_contacts_clicassure_tag(self) -> list[dict]:
+        """Method qui fetch les Contacts comportant les conditions de la source Vendeur Particulier EN en provenance de la campagne ClicAssure
+
+        Returns:
+            _type_: Retourne une de dictionnaire de Contacts
+        """
     
         return self.sac_client.get('Contacts', 
                             filters={"filter": [
                                 {"statut_client_c": "Prospect"},
-                                {"preferred_language_c": LangueCommunication.FRANCAIS},
+                                {"preferred_language_c": LangueCommunication.ANGLAIS},
                                 {"source_secondaire_c": "ClicAssure"}, 
                                 
                                 {"$or":[   
@@ -92,11 +103,15 @@ class TagVendeurParticulier:
 
     
     def get_contacts_soumission_web_tag(self):
-    
+        """Method qui fetch les Contacts comportant les conditions de la source Vendeur Particulier EN en provenance de la campagne Soumission Web
+
+        Returns:
+            _type_: Retourne une de dictionnaire de Contacts
+        """    
         return self.sac_client.get('Contacts', 
                             filters={"filter": [
                                 {"statut_client_c": "Prospect"},
-                                {"preferred_language_c": LangueCommunication.FRANCAIS},
+                                {"preferred_language_c": LangueCommunication.ANGLAIS},
                                 {"source_secondaire_c": "Soumission Web"}, 
                                 {"$or":[   
                                     {"statut_appel_c": "Date Collectee"},
@@ -107,21 +122,33 @@ class TagVendeurParticulier:
                             fields=['id', 'validation_c', 'phone_home'], max_num=5000)
        
         
-    def validation_clicassure(self, contact, genesys_list):
+    def validation_clicassure(self, contact, genesys_list) -> bool:
+        """Method validant que le lead clicassure comporte les conditions pour être exclus de sa campagne retourner dans le Vendeur Particulier Anglais
+
+        Returns:
+            _type_: Retourne un booléan
+        """
 
         return  contact['validation_c'] == 'clicassure' or \
                (contact['validation_c'] == '' and \
                 not any(contact['phone_home'] in f for f in genesys_list))
     
     
-    def validation_soumission_web(self, contact, genesys_list):
+    def validation_soumission_web(self, contact, genesys_list) -> bool:
+        """Method validant que le lead soummission web comporte les conditions pour être exclus de sa campagne retourner dans le Vendeur Particulier Anglais
 
+        Returns:
+            _type_: Retourne un booléans
+        """
         return  contact['validation_c'] == 'soumission_web_fait' or \
                (contact['validation_c'] == '' and \
                 not any(contact['phone_home'] in f for f in genesys_list))
      
         
-    def job(self):
+    def job(self) -> None:
+
+        """Method effectuant la job de tagger les Contacts rentrant dans les conditions de la source secondaire Vendeur Particulier Anglais
+        """
         
         self.file_logger.info(f"Tag de la source secondaire START")
         self.__init_api_client()
@@ -145,40 +172,45 @@ class TagVendeurParticulier:
         
         # ! DEBUG
         #Tag des contacts
-        Tagger.bulk_create(self.sac_client, 
-                           self.dorm_client, 
-                           contacts_ids + contacts_clics_ids + contacts_soum_web_ids, 
-                           source_secondaire=Tag.SourceSecondaire.VENDEUR_PARTICULIER 
-                        )
+        self.sac_client.mass_update("Contacts", [contacts_ids + contacts_clics_ids + contacts_soum_web_ids], "source_secondaire_c", "Vendeur Particulier Anglais")
 
         # #Update du champ validation_c pour les contacts clics 
         self.sac_client.mass_update("Contacts", 
                                     contacts_clics_ids + contacts_soum_web_ids, 
                                     "validation_c", "")
 
-        self.file_logger.info(f"Contacts Vendeur : {len(contacts_ids)}")
-        self.file_logger.info(f"Contacts Clics Assure : {len(contacts_clics_ids)}")
-        self.file_logger.info(f"Contacts Soumission Web : {len(contacts_soum_web_ids)}")
+        self.file_logger.info(f"Contacts Vendeur Anglais: {len(contacts_ids)}")
+        self.file_logger.info(f"Contacts Clics Assure Anglais: {len(contacts_clics_ids)}")
+        self.file_logger.info(f"Contacts Soumission Web Anglais: {len(contacts_soum_web_ids)}")
 
         self.file_logger.info(f"Tag de la source secondaire END")
 
 
-class VendeurParticulier:
+class VendeurParticulierEN:
     
-    def __init__(self, file_logger=None):
+    def __init__(self, file_logger=None) -> None:
         
         self.sac_client = SugarApiClient()
         self.dorm_client = DormApiClient()
         self.current_time = datetime.now()
-        self.max_attempts = RealTimeCampaign.VendeurParticulier.max_attempts
-        self.range_days = RealTimeCampaign.VendeurParticulier.range_days
-        self.ratio = RealTimeCampaign.VendeurParticulier.ratio
+        self.max_attempts = RealTimeCampaign.VendeurParticulierEN.max_attempts
+        self.range_days = RealTimeCampaign.VendeurParticulierEN.range_days
+        self.ratio = RealTimeCampaign.VendeurParticulierEN.ratio
         self.file_logger = file_logger
 
-    def __init_api_client(self):
+
+    def __init_api_client(self) -> None:
+        """Method initiant la connexion à l'API de Genesys
+        """
         self.outbound = Outbound(os.getenv('CLIENT_ID'), os.getenv('CLIENT_SECRET'))
+
         
-    def get_end_dates(self):
+    def get_end_dates(self) -> list:
+        """Method calculant les dates de fin du range 0-30 jours du mois courant et passée
+
+        Returns:
+            list: Une liste de date
+        """
         
         tmp = self.current_time + timedelta(days= self.range_days)
         fortyfive_past_days_years = []        
@@ -191,12 +223,22 @@ class VendeurParticulier:
         return fortyfive_past_days_years
 
 
-    def past_days_rdv(self):
+    def past_days_rdv(self) -> str:
+        """Method calculant la date du jour moins 10 jours 
+
+        Returns:
+            str: Retourne un string de la date
+        """
         
         return (datetime.now() - timedelta(days=10)).strftime('%Y-%m-%d')
 
 
-    def get_start_dates(self):
+    def get_start_dates(self) -> list:
+        """Method calculant les dates de début du range 0-30 jours du mois courant et passée
+
+        Returns:
+            list: Une liste de date
+        """
 
         tmp = self.current_time
         current_time_years=[]
@@ -209,15 +251,23 @@ class VendeurParticulier:
         return current_time_years
          
          
-    def get_dates_autres(self, limit=None):
+    def get_dates_autres(self, limit=None) -> list[dict]:
+        """Method fetchant les Contacts rentrant dans les conditions de la campagne C.VendeurParticulierAnglais pour les leads qui ne sont pas avec Intact Assurance
+
+        Args:
+            limit (_type_, optional): Limit maximum de Contacts fetcher
+
+        Returns:
+            list[dict]: Retourne une liste de dictionnaire de Contacts
+        """
         
         print('GET Dates Autres')
         
         return self.sac_client.get('Contacts', 
                             filters={"filter": [
                                 {"statut_client_c": "Prospect"},
-                                {"preferred_language_c": LangueCommunication.FRANCAIS},
-                                {"source_secondaire_c": "Vendeur Particulier"},
+                                {"preferred_language_c": LangueCommunication.ANGLAIS},
+                                {"source_secondaire_c": "Vendeur Particulier Anglais"},
                                 {"statut_appel_c":
                                     {"$in": ["Date Collectee", "Date Collectee Relance"]}
                                 },
@@ -232,16 +282,24 @@ class VendeurParticulier:
                             max_num=5000)
 
 
-    def get_dates_intact(self, limit=None):
+    def get_dates_intact(self, limit=None) -> list[dict]:
+        """Method fetchant les Contacts rentrant dans les conditions de la campagne C.VendeurParticulierAnglais pour les leads qui sont avec Intact Assurance
+
+        Args:
+            limit (_type_, optional): Limit maximum de Contacts fetcher
+
+        Returns:
+            list[dict]: Retourne une liste de dictionnaire de Contacts
+        """
         
         print('GET Dates Intact')
         
         return self.sac_client.get('Contacts', 
                             filters={"filter": [
                                 {"statut_client_c": "Prospect"},
-                                {"preferred_language_c": LangueCommunication.FRANCAIS},
+                                {"preferred_language_c": LangueCommunication.ANGLAIS},
                                 {"statut_appel_c": "Intact Dates Collectees"},
-                                {"source_secondaire_c": "Vendeur Particulier"},                                
+                                {"source_secondaire_c": "Vendeur Particulier Anglais"},                                
                                 {"$or":[
                                     {"rdv_contact_c": {"$empty":""}},                                    
                                     {"rdv_contact_c": {"$lt": f"{self.past_days_rdv()}"}}
@@ -267,7 +325,7 @@ class VendeurParticulier:
         return is_in_range
 
 
-    def dates_are_in_ranges(self, contact_model, ranges):
+    def dates_are_in_ranges(self, contact_model, ranges) -> bool:
 
         """Retourne vrai si une des dates de renouvellement du contacts est 
            comprise inclusivent entre un range de date"""
@@ -320,11 +378,29 @@ class VendeurParticulier:
         return dates_autres
     
     
-    def exist_in_genesys(self, genesys_list_numbers, phone):
+    def exist_in_genesys(self, genesys_list_numbers, phone) -> bool:
+        """Method qui valide si un numéro de téléphone existe dans une liste Genesys
+
+        Args:
+            genesys_list_numbers (list[str]): Une liste de numéros
+            phone (str): Un numéro
+
+        Returns:
+            _type_: Retourne un bouléen
+        """
         return phone in genesys_list_numbers
     
     
     def exist_in_sugar(self, s_list_numbers, phone):
+        """Method qui valide si un numéro de téléphone existe dans une liste SugarCRM
+
+        Args:
+            genesys_list_numbers (list[str]): Une liste de numéros
+            phone (str): Un numéro
+
+        Returns:
+            _type_: Retourne un bouléen
+        """
         return phone in s_list_numbers
 
 
@@ -340,6 +416,13 @@ class VendeurParticulier:
 
 
     def update_phone(self, s_contact, f_contacts, contact_list_id):
+        """Method qui update le numéro de téléphone d'un lead Genesys
+
+        Args:
+            s_contact (dict): Contact SugarCRM
+            f_contacts (list[dict]): List de lead Genesys
+            contact_list_id (str): Un ID de liste
+        """
 
         f_contact = self.find_in_genesys_by_id(f_contacts, s_contact["id"])
         
@@ -348,7 +431,13 @@ class VendeurParticulier:
             self.outbound.update_a_contact(contact_list_id, s_contact["id"], {'data': {"number": s_contact["phone_home"]}} )
 
 
-    def __create_to_genesys(self, s_contacts, contact_list_id):
+    def __create_to_genesys(self, s_contacts, contact_list_id) -> None:
+        """Method qui cré des nouveaux leads dans une campagne Genesys
+
+        Args:
+            s_contacts (list[dict]): Une liste de Contacts
+            contact_list_id (str): Un ID de liste
+        """
         contacts_to_add = []
         
         for s_contact in s_contacts:   
@@ -372,7 +461,13 @@ class VendeurParticulier:
         self.outbound.add_contacts_to_a_contact_list(contact_list_id, contacts_to_add)
     
     
-    def __delete_of_genesys(self, f_contacts, contact_list_id):
+    def __delete_of_genesys(self, f_contacts, contact_list_id) -> None:
+        """Method qui supprime des leads dans une campagne Genesys
+
+        Args:
+            s_contacts (list[dict]): Une liste de Contacts
+            contact_list_id (str): Un ID de liste
+        """
         
         contacts_to_delete = []
         
@@ -384,7 +479,14 @@ class VendeurParticulier:
         self.outbound.delete_contacts_from_a_contact_list(contact_list_id, contacts_to_delete)
 
 
-    def __update_of_genesys(self, s_contacts, genesys_list, contact_list_id):
+    def __update_of_genesys(self, s_contacts, genesys_list, contact_list_id) -> None:
+        """Method qui update des leads dans une campagne Genesys
+
+        Args:
+            s_contacts (list[dict]): Une liste de Contacts
+            genesys_list (list[dict]): Une liste de leads Genesys
+            contact_list_id (str): Un ID de liste
+        """
         
         for s_contact in s_contacts:
             
@@ -394,7 +496,7 @@ class VendeurParticulier:
     def update(self, s_contacts):
         self.file_logger.info(f"genesys Update Start")
 
-        contact_list_id = self.outbound.get_contact_list_id_from_a_campaign_name(GenesysCampaign.C_VENDEUR_PARTICULIER)    
+        contact_list_id = self.outbound.get_contact_list_id_from_a_campaign_name("C.VendeurAnglophone")    
         genesys_list = self.outbound.get_all_contacts_from_a_contact_list(contact_list_id)        
         
         f_list_numbers =  list(map(lambda x: x['number'], genesys_list))
@@ -425,9 +527,7 @@ class VendeurParticulier:
         
         self.file_logger.info("VendeurParticulier JOB START")
         self.__init_api_client()
-        
-        # self.outbound.delete_all_contacts_from_a_contact_list("0eeeb25b-ef8b-4ca0-b4fe-929f9f193b8e")
-        
+            
         dates = list(zip(self.get_start_dates(), self.get_end_dates()))
         
         #Contacts 
@@ -459,8 +559,8 @@ class Service(ServiceSuper):
     def __init__(self):
        
         ServiceSuper.__init__(self, Service.NAME)
-        self.tag_vp = TagVendeurParticulier(self.file_logger)
-        self.vp = VendeurParticulier(self.file_logger)
+        self.tag_vp = TagVendeurParticulierEN(self.file_logger)
+        self.vp = VendeurParticulierEN(self.file_logger)
         self.dorm = DormApiClient()        
 
     
